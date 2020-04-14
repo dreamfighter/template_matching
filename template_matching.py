@@ -8,6 +8,7 @@ import sqlite3
 from matplotlib import pyplot as plt
 from skimage import exposure
 
+
 PAGE_SURA_START = [ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 			2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 			2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3,
@@ -89,6 +90,24 @@ SURA_NUM_AYAHS = [ 7, 286, 200, 176, 120, 165, 206, 75,
 			20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19, 26, 30,
 			20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3, 6,
 			3, 5, 4, 5, 6 ]
+
+def createTable():
+	conn = sqlite3.connect('block-v2.db')
+	c = conn.cursor()
+
+	# Create table
+	c.execute('''CREATE TABLE block
+	             (id integer, left real, top real, bottom real, right real, ratioWidth integer, ratioHeight integer, block integer, page integer, ayah integer, createdOn text, updatedOn text)''')
+
+	# Insert a row of data
+	#c.execute("INSERT INTO stocks VALUES ('2006-01-05','BUY','RHAT',100,35.14)")
+
+	# Save (commit) the changes
+	conn.commit()
+
+	# We can also close the connection if we are done with it.
+	# Just be sure any changes have been committed or they will be lost.
+	conn.close()
 
 def getAyahCountFromNumberSurah(surah):
 	surah = surah - 1
@@ -330,4 +349,5 @@ print(sys.argv[1])
 matchTemplate(sys.argv[1])
 matchTemplateHeader(sys.argv[1])
 print(getListAyahFromPage(1))
+createTable()
 #findContour(sys.argv[1])
