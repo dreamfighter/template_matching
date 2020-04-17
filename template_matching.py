@@ -10,7 +10,7 @@ from skimage import exposure
 
 conn = sqlite3.connect('block-v2.db')
 
-frame = {1:(150,335,100)}
+frame = {1:(150,335,70)}
 
 PAGE_SURA_START = [ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 			2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -282,7 +282,7 @@ def matchTemplate(imgName,page):
 		nodes = []
 		#p1 = (pt[0]-5, pt[1]-5)
 		if i==1:
-			prevpt = (width - 5 - marginX,ymin - 20 + marginY)
+			prevpt = (width - 5 - marginX - marginAdd,ymin - 20 + marginY)
 		#	if pt[1]-5 + marginY>ymin:
 		#		p1 = (xmin - 35, ymin - 25 + marginY)
 		#	p2 = (p1[0] + marginX, pt[1]-5)
