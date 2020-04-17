@@ -10,7 +10,22 @@ from skimage import exposure
 
 conn = sqlite3.connect('block-v2.db')
 
-frame = {1:(150,335,70)}
+frame = {1:(150,335,70),2:(150,490,0)}
+
+SURAS_COUNT = 604
+AYA_MIN = 1
+AYA_MAX = 286
+
+SURA_PAGE_START = [ 1, 2, 50, 77, 106, 128, 151, 177,
+			187, 208, 221, 235, 249, 255, 262, 267, 282, 293, 305, 312, 322,
+			332, 342, 350, 359, 367, 377, 385, 396, 404, 411, 415, 418, 428,
+			434, 440, 446, 453, 458, 467, 477, 483, 489, 496, 499, 502, 507,
+			511, 515, 518, 520, 523, 526, 528, 531, 534, 537, 542, 545, 549,
+			551, 553, 554, 556, 558, 560, 562, 564, 566, 568, 570, 572, 574,
+			575, 577, 578, 580, 582, 583, 585, 586, 587, 587, 589, 590, 591,
+			591, 592, 593, 594, 595, 595, 596, 596, 597, 597, 598, 598, 599,
+			599, 600, 600, 601, 601, 601, 602, 602, 602, 603, 603, 603, 604,
+			604, 604 ]
 
 PAGE_SURA_START = [ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 			2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -100,8 +115,17 @@ def createTable():
 
 	# Create table
 	c.execute('''CREATE TABLE block
-	             (id integer, x real, y real, ratioWidth integer, ratioHeight integer, block integer, page integer, surah integer, ayah integer, createdOn text, updatedOn text)''')
+	             (id integer PRIMARY KEY, x real, y real, ratioWidth integer, ratioHeight integer, block integer, page integer, surah integer, ayah integer, createdOn text, updatedOn text)''')
 
+	pageIndex = "CREATE INDEX index_page ON parts(page)"
+	surahIndex = "CREATE INDEX index_surah ON parts(surah)"
+	ayahIndex = "CREATE INDEX index_ayah ON parts(ayah)"
+	blockIndex = "CREATE INDEX index_block ON parts(block)"
+
+	c.execute(pageIndex)
+	c.execute(surahIndex)
+	c.execute(ayahIndex)
+	c.execute(blockIndex)
 	# Insert a row of data
 	#c.execute("INSERT INTO stocks VALUES ('2006-01-05','BUY','RHAT',100,35.14)")
 
@@ -112,12 +136,12 @@ def createTable():
 	# Just be sure any changes have been committed or they will be lost.
 	conn.close()
 
-def insert(id,x,y,ratioWidth,ratioHeight,block,page,surah,ayah,createdOn,updatedOn):
+def insert(x,y,ratioWidth,ratioHeight,block,page,surah,ayah):
 	c = conn.cursor()
 
 	# Create table
-	c.execute("INSERT INTO block VALUES ({},{},{},{},{},{},{},{},{},{},{})".format(id,x,y,ratioWidth,ratioHeight,block,page,surah,ayah,createdOn,updatedOn))
-
+	c.execute("INSERT INTO block(x, y, ratioWidth, ratioHeight, block, page, surah, ayah) VALUES ({},{},{},{},{},{},{},{})".format(x,y,ratioWidth,ratioHeight,block,page,surah,ayah))
+	
 	# Insert a row of data
 	#c.execute("INSERT INTO stocks VALUES ('2006-01-05','BUY','RHAT',100,35.14)")
 
@@ -126,7 +150,15 @@ def insert(id,x,y,ratioWidth,ratioHeight,block,page,surah,ayah,createdOn,updated
 
 	# We can also close the connection if we are done with it.
 	# Just be sure any changes have been committed or they will be lost.
-	conn.close()
+	#conn.close()
+
+def findBlock(page,surah,ayah,block):
+	c = conn.cursor()
+	t = (page,surah,ayah,block)
+	c.execute('SELECT * FROM block WHERE page=? and surah=? and ayah=? and block=?', t)
+	result = c.fetchone()
+	print(result)
+	return result
 
 def getAyahCountFromNumberSurah(surah):
 	surah = surah - 1
@@ -146,6 +178,50 @@ def getSuraNumberFromPage(page):
 		return PAGE_SURA_START[page - 1]
 	
 	return None
+
+def getPageFromSuraAyah(sura, ayah):
+	# basic bounds checking
+	if sura == 1:
+		return 1
+	else:
+		if (sura < 1) or (sura > SURAS_COUNT) or (ayah < AYA_MIN) or (ayah > AYA_MAX):
+			return -1
+
+		# what page does the sura start on?
+		index = SURA_PAGE_START[sura - 1] - 1
+		while index < 604:
+			# what's the first sura in that page?
+			ss = PAGE_SURA_START[index];
+
+			# if we've passed the sura, return the previous page
+			if ss > sura:
+				# return index - 1;
+				return index
+
+			# otherwise, if we're at the sura and found the ayah, return it
+			if (ss == sura) and (PAGE_AYAH_START[index] > ayah):
+				return index
+
+			# otherwise, look at the next page
+			else:
+				index+=1
+		return index
+
+
+def getListSurahFromPage(page):
+	listSurah = []
+	firstSurahPage = getSuraNumberFromPage(page)
+	listSurah.append(firstSurahPage)
+
+	nextSurahPage = firstSurahPage + 1;
+	nextPage = getPageFromSuraAyah(nextSurahPage, 1)
+	while page == nextPage:
+		listSurah.append(nextSurahPage)
+		nextSurahPage +=1
+		nextPage = getPageFromSuraAyah(nextSurahPage, 1)
+	
+	return listSurah
+
 	
 def getListAyahFromPage(page):
 
@@ -165,6 +241,71 @@ def getListAyahFromPage(page):
 	
 	return list
 
+def findAyahFromPageAndSurah(page, surah):
+	list = []
+	min = getFirstAyahFromPage(page)
+	max = getFirstAyahFromPage(page + 1)
+
+	currSurahPage = getPageFromSuraAyah(surah, 1)
+	nextSurahPage = 0
+
+	if surah < SURAS_COUNT:
+		nextSurahPage = getPageFromSuraAyah(surah + 1, 1)
+	else:
+		nextSurahPage = currSurahPage
+
+	if currSurahPage == page and currSurahPage == nextSurahPage:
+		min = 1
+		max = getAyahCountFromNumberSurah(surah)
+		max +=1
+	elif currSurahPage == page and page + 1 == nextSurahPage and max == 1:
+		min = 1
+		max = getAyahCountFromNumberSurah(surah)
+		max +=1
+	elif currSurahPage == page and page + 1 <= nextSurahPage:
+		min = 1
+		max = getFirstAyahFromPage(page + 1)
+	elif currSurahPage != page and page == nextSurahPage:
+		min = getFirstAyahFromPage(page)
+		max = getAyahCountFromNumberSurah(surah)
+		max +=1
+	elif currSurahPage != page and page + 1 == nextSurahPage and max == 1:
+		min = getFirstAyahFromPage(page)
+		max = getAyahCountFromNumberSurah(surah)
+		max +=1
+	
+
+	for i in range(min,max):
+		list.append(i)
+	
+	return list
+
+
+def getListAyahFromListSurah(page):
+    listSurahNumber = []
+    listSurahNumber = getListSurahFromPage(page)
+    
+    murottalName = []
+    
+    for surahNumber in listSurahNumber:
+        #if surah!=-1 and surahNumber<SURAS_COUNT:
+        #    continue
+        
+        listAyah = findAyahFromPageAndSurah(page, surahNumber)
+        
+        for ayahNumber in listAyah:
+            
+            ayahName = (page, surahNumber, ayahNumber)
+            murottalName.append(ayahName);
+            #Logger.log("murottal ayah name =>"+ayahName);
+            #Ayah ayah = new Ayah();
+            #ayah.setSurah(surahNumber);
+            #ayah.setAyah(ayahNumber);
+            #ayah.setPage(page);
+            #this.listAyah.add(ayah);
+
+    return murottalName
+    
 
 def distance(p1,p2):
 	dist = math.sqrt((p2[0] - p1[0])**2 + (p2[1] - p1[1])**2)  
@@ -215,16 +356,17 @@ def matchTemplateHeader(imgName,page):
 			cv2.rectangle(img_rgb, pt, (pt[0] + w, pt[1] + h), (0,0,255), 2)
 
 			r[int(sensitivityY)].append(pt)
-			result.append(pt)
+			result.append((pt[0],pt[1]+h))
 			f.add((sensitivityX, sensitivityY))
 
 	cv2.imwrite('header.png'.format(i),img_rgb)
 	print('found header = {}'.format(len(f)))
-
-
+	return result
 
 
 def matchTemplate(imgName,page):
+
+	headers = matchTemplateHeader(imgName,page)
 	img_rgb = cv2.imread(imgName)
 	img_result = cv2.imread(imgName)
 	img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
@@ -246,7 +388,7 @@ def matchTemplate(imgName,page):
 	print("image size = {},{}".format(width,height))
 
 	res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
-	threshold = 0.45
+	threshold = 0.49
 	loc = np.where(res >= threshold)
 	i = 0 
 	f = set()
@@ -255,11 +397,16 @@ def matchTemplate(imgName,page):
 	prevpt = (0,0)
 	b = []
 	r = {}
+	
+	listayah = getListAyahFromListSurah(page)
+	print("ayah = {}".format(listayah))
+	
+	header = -1
+
 	for pt in zip(*loc[::-1]):
 		sensitivity = 100
 		sensitivityX = round(pt[0]/sensitivity)
 		sensitivityY = round(pt[1]/sensitivity)
-
 
 		if (sensitivityX, sensitivityY) not in f:
 			if sensitivityY not in r:
@@ -276,8 +423,20 @@ def matchTemplate(imgName,page):
 			b.append(pt)
 
 	for pt in b:
+
+		offsetY = 0
+
 		i+=1
 		imgCopy = img_result.copy()
+
+		bottom = 0
+		for offset in headers:
+			if pt[1] > offset[1]:
+				bottom = offset[1]
+		
+		if header != bottom:
+			header = bottom
+			offsetY = bottom
 
 		nodes = []
 		#p1 = (pt[0]-5, pt[1]-5)
@@ -297,6 +456,9 @@ def matchTemplate(imgName,page):
 		#	nodes.append(p5)
 		#	nodes.append(p6)
 		#else:
+
+		if offsetY>0:
+			prevpt = (width-10, offsetY + 20)
 
 		p1 = (prevpt[0]-5, prevpt[1]-5)
 		if xmin + marginX + marginAdd > prevpt[0] - 5:
@@ -326,8 +488,17 @@ def matchTemplate(imgName,page):
 			nodes.append(p7)
 			nodes.append(p8)
 
-		
-		
+		ayah = listayah[i-1]
+		j = 0
+		for node in nodes:
+			data = {'x':node[0],'y':node[1],'ratioWidth':width,'ratioHeight':height,'page':ayah[0],'surah':ayah[1],'ayah':ayah[2],'block':j}
+			rq = findBlock(ayah[0],ayah[1],ayah[2],j)
+			if rq == None:
+				insert(node[0],node[1],width,height,j,ayah[0],ayah[1],ayah[2])
+			j+=1
+			#print(data)
+			print(rq)
+
 		#nodes = np.array(nodes)
 		
 		nodes = np.int32([nodes])
@@ -383,10 +554,11 @@ def findContour( imgName ):
 	return edged;
 
 
-filename = "DQ_{}.png".format(sys.argv[1].rjust(3, '0'))
+filename = "src/DQ_{}.png".format(sys.argv[1].rjust(3, '0'))
 print(filename)
-matchTemplate(filename,int(sys.argv[1]))
-matchTemplateHeader(filename,int(sys.argv[1]))
-print(getListAyahFromPage(1))
 #createTable()
+matchTemplate(filename,int(sys.argv[1]))
+#matchTemplateHeader(filename,int(sys.argv[1]))
+#print(getListAyahFromPage(1))
+
 #findContour(sys.argv[1])
