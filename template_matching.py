@@ -8,6 +8,9 @@ import sqlite3
 from matplotlib import pyplot as plt
 from skimage import exposure
 
+conn = sqlite3.connect('block-v2.db')
+
+frame = {1:(150,335,100)}
 
 PAGE_SURA_START = [ 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
 			2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
@@ -92,12 +95,28 @@ SURA_NUM_AYAHS = [ 7, 286, 200, 176, 120, 165, 206, 75,
 			3, 5, 4, 5, 6 ]
 
 def createTable():
-	conn = sqlite3.connect('block-v2.db')
+	
 	c = conn.cursor()
 
 	# Create table
 	c.execute('''CREATE TABLE block
-	             (id integer, left real, top real, bottom real, right real, ratioWidth integer, ratioHeight integer, block integer, page integer, ayah integer, createdOn text, updatedOn text)''')
+	             (id integer, x real, y real, ratioWidth integer, ratioHeight integer, block integer, page integer, surah integer, ayah integer, createdOn text, updatedOn text)''')
+
+	# Insert a row of data
+	#c.execute("INSERT INTO stocks VALUES ('2006-01-05','BUY','RHAT',100,35.14)")
+
+	# Save (commit) the changes
+	conn.commit()
+
+	# We can also close the connection if we are done with it.
+	# Just be sure any changes have been committed or they will be lost.
+	conn.close()
+
+def insert(id,x,y,ratioWidth,ratioHeight,block,page,surah,ayah,createdOn,updatedOn):
+	c = conn.cursor()
+
+	# Create table
+	c.execute("INSERT INTO block VALUES ({},{},{},{},{},{},{},{},{},{},{})".format(id,x,y,ratioWidth,ratioHeight,block,page,surah,ayah,createdOn,updatedOn))
 
 	# Insert a row of data
 	#c.execute("INSERT INTO stocks VALUES ('2006-01-05','BUY','RHAT',100,35.14)")
@@ -140,8 +159,8 @@ def getListAyahFromPage(page):
 	
 	list = []
 	for i in range(min, max):
-		ayah = "{}".format(i).ljust(3, '0');
-		list.append(i)
+		ayah = "{}".format(i).ljust(3, '0')
+		list.append((page,surah,i))
 		#list.append("{}{}{}".format(surah, ayah, ".png"))
 	
 	return list
@@ -154,15 +173,22 @@ def distance(p1,p2):
 def sort_x(t):
 	return t[0]
 
-def matchTemplateHeader(imgName):
-	img_rgb = cv2.imread(imgName)
-	img_result = cv2.imread(imgName)
+def matchTemplateHeader(imgName,page):
+	img1_rgb = cv2.imread(imgName)
+	img1_result = cv2.imread(imgName)
+	height = img1_rgb.shape[0]
+	width = img1_rgb.shape[1]
+	if page in frame:
+		img_rgb = img1_rgb[frame[page][1]:height-frame[page][1], 0:width]
+		img_result = img1_result[frame[page][1]:height-frame[page][1], 0:width]
+	else:
+		img_rgb = img1_rgb
+		img_result = img1_result
+
 	img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
 	template = cv2.imread('mark-basmallah.png',0)
 
 	w, h = template.shape[::-1]
-	height = img_rgb.shape[0]
-	width = img_rgb.shape[1]
 	print("image size = {},{}".format(width,height))
 
 	res = cv2.matchTemplate(img_gray,template,cv2.TM_CCOEFF_NORMED)
@@ -198,11 +224,21 @@ def matchTemplateHeader(imgName):
 
 
 
-def matchTemplate(imgName):
+def matchTemplate(imgName,page):
 	img_rgb = cv2.imread(imgName)
 	img_result = cv2.imread(imgName)
 	img_gray = cv2.cvtColor(img_rgb, cv2.COLOR_BGR2GRAY)
 	template = cv2.imread('mark.png',0)
+
+	marginX = 0
+	marginY = 0
+	marginAdd = 0
+	if page in frame:
+		marginX = frame[page][0]
+		marginY = frame[page][1]
+		marginAdd = frame[page][2]
+
+	print(marginX)
 
 	w, h = template.shape[::-1]
 	height = img_rgb.shape[0]
@@ -244,49 +280,51 @@ def matchTemplate(imgName):
 		imgCopy = img_result.copy()
 
 		nodes = []
-		p1 = (pt[0]-5, pt[1]-5)
+		#p1 = (pt[0]-5, pt[1]-5)
 		if i==1:
-			if pt[1]-5>ymin:
-				p1 = (xmin - 35, ymin - 25)
-			p2 = (p1[0], pt[1]-5)
-			p3 = (pt[0]-5, pt[1]-5)
-			p4 = (pt[0]-5, pt[1] + h + 5)
-			p5 = (width - 5, pt[1] + h + 5)
-			p6 = (width - 5, p1[1])
-			nodes.append(p1)
-			nodes.append(p2)
-			nodes.append(p3)
-			nodes.append(p4)
+			prevpt = (width - 5 - marginX,ymin - 20 + marginY)
+		#	if pt[1]-5 + marginY>ymin:
+		#		p1 = (xmin - 35, ymin - 25 + marginY)
+		#	p2 = (p1[0] + marginX, pt[1]-5)
+		#	p3 = (pt[0]-5, pt[1]-5)
+		#	p4 = (pt[0]-5, pt[1] + h + 5)
+		#	p5 = (width - 5 - marginX, pt[1] + h + 5)
+		#	p6 = (width - 5 - marginX, p1[1])
+		#	nodes.append(p1)
+		#	nodes.append(p2)
+		#	nodes.append(p3)
+		#	nodes.append(p4)
+		#	nodes.append(p5)
+		#	nodes.append(p6)
+		#else:
+
+		p1 = (prevpt[0]-5, prevpt[1]-5)
+		if xmin + marginX + marginAdd > prevpt[0] - 5:
+			p1 = (width - 10 - marginX, prevpt[1] + h + 10)
+		if pt[1]-5 < p1[1] + 50:
+			p2 = (pt[0]-5,p1[1])
+			p3 = (pt[0]-5, pt[1] + h + 10)
+			p4 = (p1[0], pt[1] + h + 10)
+		else:
+			p2 = (xmin - 35 + marginX,p1[1])
+			p3 = (p2[0], pt[1] - 5)
+			p4 = (pt[0] - 5, pt[1] - 5)
+		
+		if pt[1]-5 > p1[1] + 50:
+			p5 = (pt[0] - 5, pt[1] + h + 5)
+			p6 = (width - 10 - marginX, pt[1] + h + 5)
+			p7 = (width - 10 - marginX, p1[1] + h + 10)
+			p8 = (p1[0], p1[1] + h + 10)
+
+		nodes.append(p1)
+		nodes.append(p2)
+		nodes.append(p3)
+		nodes.append(p4)
+		if pt[1]-5 > p1[1] + 50:
 			nodes.append(p5)
 			nodes.append(p6)
-		else:
-			p1 = (prevpt[0]-5, prevpt[1]-5)
-			if xmin > prevpt[0] - 5:
-				p1 = (width - 10, prevpt[1] + h + 10)
-			if pt[1]-5 < p1[1] + 50:
-				p2 = (pt[0]-5,p1[1])
-				p3 = (pt[0]-5, pt[1] + h + 10)
-				p4 = (p1[0], pt[1] + h + 10)
-			else:
-				p2 = (xmin - 35,p1[1])
-				p3 = (p2[0], pt[1] - 5)
-				p4 = (pt[0] - 5, pt[1] - 5)
-			
-			if pt[1]-5 > p1[1] + 50:
-				p5 = (pt[0] - 5, pt[1] + h + 5)
-				p6 = (width - 10, pt[1] + h + 5)
-				p7 = (width - 10, p1[1] + h + 10)
-				p8 = (p1[0], p1[1] + h + 10)
-
-			nodes.append(p1)
-			nodes.append(p2)
-			nodes.append(p3)
-			nodes.append(p4)
-			if pt[1]-5 > p1[1] + 50:
-				nodes.append(p5)
-				nodes.append(p6)
-				nodes.append(p7)
-				nodes.append(p8)
+			nodes.append(p7)
+			nodes.append(p8)
 
 		
 		
@@ -344,10 +382,11 @@ def findContour( imgName ):
 	cv2.imwrite('res1.png',image)
 	return edged;
 
-print(sys.argv[1])
 
-matchTemplate(sys.argv[1])
-matchTemplateHeader(sys.argv[1])
+filename = "DQ_{}.png".format(sys.argv[1].rjust(3, '0'))
+print(filename)
+matchTemplate(filename,int(sys.argv[1]))
+matchTemplateHeader(filename,int(sys.argv[1]))
 print(getListAyahFromPage(1))
-createTable()
+#createTable()
 #findContour(sys.argv[1])
